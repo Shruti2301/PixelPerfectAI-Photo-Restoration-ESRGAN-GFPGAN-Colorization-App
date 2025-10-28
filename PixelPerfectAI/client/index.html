@@ -1,0 +1,68 @@
+<!-- 
+  =====================================================================
+  File: index.html
+  Project: PixelPerfectAI - AI-Powered Image Enhancement
+  Description:
+    This is the main HTML entry file for the PixelPerfectAI web application.
+    It provides the document structure, metadata, and links required to 
+    initialize the React + TypeScript frontend application.
+  
+  Functions / Responsibilities:
+    1. Defines the page structure and metadata for SEO and responsiveness.
+    2. Loads Google Fonts for consistent typography.
+    3. Serves as the mounting point for the React app via <div id="root">.
+    4. Imports the main TypeScript module (main.tsx) that initializes the app.
+
+  // Author: Shruti Mandaokar
+  // Created: October 2025
+ 
+  =====================================================================
+-->
+
+<!DOCTYPE html>
+<!-- Declares the document type as HTML5 -->
+
+<html lang="en">
+  <!-- The root element of the HTML document; 'lang="en"' specifies the language as English -->
+  
+  <head>
+    <!-- The head section contains metadata and links to external resources -->
+    
+    <meta charset="UTF-8" />
+    <!-- Specifies the character encoding for the document (UTF-8 supports most characters worldwide) -->
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+    <!-- Ensures responsive design: sets the page width to the device width and limits zoom to 1x -->
+
+    <title>PixelPerfectAI - AI-Powered Image Enhancement</title>
+    <!-- Sets the page title that appears in the browser tab -->
+
+    <meta 
+      name="description" 
+      content="Transform your images with cutting-edge AI technology. Upscale, enhance, and restore photos with professional-grade deep learning models. Try PixelPerfectAI today." 
+    />
+    <!-- Provides a short description for SEO and search engines -->
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <!-- Establishes an early connection to Google Fonts for faster loading -->
+
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <!-- Preconnects to Google's font static content domain and allows cross-origin requests -->
+
+    <link 
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" 
+      rel="stylesheet"
+    >
+    <!-- Imports two fonts: 'Inter' for UI text and 'JetBrains Mono' for code-like text -->
+  </head>
+
+  <body>
+    <!-- The body contains all the visible content of the page -->
+
+    <div id="root"></div>
+    <!-- A placeholder div where the React app will be mounted -->
+
+    <script type="module" src="/src/main.tsx"></script>
+    <!-- Loads the main TypeScript (React) entry file as an ES module -->
+  </body>
+</html>

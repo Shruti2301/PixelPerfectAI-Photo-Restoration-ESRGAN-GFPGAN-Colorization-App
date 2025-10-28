@@ -1,0 +1,1 @@
+ALTER TABLE "enhancements" ADD COLUMN "original_resolution" varchar;
