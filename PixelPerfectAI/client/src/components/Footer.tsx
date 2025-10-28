@@ -67,12 +67,12 @@ export default function Footer() {
                 </Link>
               </li>
               <li>
-                <Link href="/pricing">
+                <Link href="/features">
                   <a
                     className="text-sm text-muted-foreground hover:text-foreground transition-colors"
                     data-testid="footer-link-pricing"
                   >
-                    Pricing
+                    Features
                   </a>
                 </Link>
               </li>

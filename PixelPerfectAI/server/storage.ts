@@ -148,12 +148,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getPublicEnhancements(): Promise<Enhancement[]> {
+    // 🎯 FIX APPLIED: Limit is now 5
     return db
       .select()
       .from(enhancements)
       .where(eq(enhancements.isPublic, true))
       .orderBy(desc(enhancements.createdAt))
-      .limit(50);
+      .limit(5); 
   }
 
   async getRecentEnhancements(limit: number): Promise<Enhancement[]> {

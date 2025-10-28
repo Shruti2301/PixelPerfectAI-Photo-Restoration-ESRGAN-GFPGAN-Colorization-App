@@ -2,9 +2,6 @@
 // =============================================================
 // API Router and Core Business Logic (Node.js/Express)
 // -------------------------------------------------------------
-// Defines authentication, user session, and the main image 
-// enhancement job queueing endpoint.
-// =============================================================
 
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
@@ -12,7 +9,6 @@ import { storage } from "./storage"; // Database storage layer
 import multer from "multer"; // Middleware for handling file uploads
 import axios from "axios"; 
 import cookie_parser from "cookie-parser"; 
-// 🟢 NEW: Import sharp for reading image dimensions (MUST BE INSTALLED: npm install sharp)
 import sharp from 'sharp'; 
 
 import { hashPassword, comparePassword, generateToken, verifyToken } from "./authUtils";
@@ -31,12 +27,12 @@ interface NewUserCreationData {
     credits: number;
 }
 
+const LOCAL_SERVER_URL = `http://127.0.0.1:${process.env.PORT || 5001}`; 
 const PYTHON_WORKER_URL = 'http://localhost:5000/api/enhancements/process_job'; 
 const ENHANCEMENT_COST = 1; 
 
 
-// 🟢 LOCAL FUNCTION: Read Image Resolution using Sharp (REPLACES PLACEHOLDER)
-// This function reads the image buffer and returns "widthxheight"
+// LOCAL FUNCTION: Read Image Resolution using Sharp
 async function readImageResolutionFromBuffer(buffer: Buffer): Promise<string> {
     try {
         const metadata = await sharp(buffer).metadata();
@@ -46,16 +42,13 @@ async function readImageResolutionFromBuffer(buffer: Buffer): Promise<string> {
         throw new Error("Missing image dimensions.");
     } catch (error) {
         console.error("Error reading image metadata:", error);
-        // Fallback for files where sharp fails
         return "N/A"; 
     }
 }
-// -----------------------------------------------------------------
 
-// --- Middleware (Unchanged) ---
+// --- Middleware ---
 export function authenticate(req: Request, res: Response, next: any) {
     const token = req.cookies.jwt; 
-    // ... authentication logic (unchanged)
     
     if (!token) {
         req.user = null; 
@@ -83,7 +76,7 @@ function requireAuth(req: Request, res: Response, next: any) {
 }
 
 // =========================================================================
-// ASYNCHRONOUS JOB HANDLER (UNCHANGED)
+// ASYNCHRONOUS JOB HANDLER
 // =========================================================================
 async function queueEnhancementJob(
     enhancementId: string, 
@@ -91,7 +84,7 @@ async function queueEnhancementJob(
     imageBase64: string, 
     enhancementType: string, 
     scale: number, 
-    startTime: number
+    startTime: number 
 ) {
     
     try {
@@ -99,19 +92,20 @@ async function queueEnhancementJob(
             status: "processing", 
             processingProgress: 10,
         } as unknown as EnhancementUpdate); 
-        console.log(`[JOB START] Enhancement ${enhancementId} is processing.`);
+        console.log(`[JOB DELEGATE] Enhancement ${enhancementId} is processing.`);
         
         const response = await axios.post(PYTHON_WORKER_URL, {
             jobId: enhancementId, 
             enhancementType: enhancementType,
             imageFileBase64: imageBase64, 
+            callbackUrl: `${LOCAL_SERVER_URL}/api/enhancements/complete`, 
         });
 
         if (response.status !== 202) {
              throw new Error(`Python worker rejected job with status: ${response.status}`);
         }
 
-        console.log(`[JOB DELEGATED] Enhancement ${enhancementId} successfully sent to Python worker.`);
+        console.log(`[JOB SENT] Enhancement ${enhancementId} successfully delegated to Python worker.`);
         
     } catch (error: any) {
         const failureTime = Date.now() - startTime;
@@ -133,8 +127,7 @@ async function queueEnhancementJob(
 // =========================================================================
 
 
-// --- API Routes Initialization (UNCHANGED AUTH LOGIC) ---
-
+// --- API Routes Initialization ---
 export async function registerRoutes(app: Express): Promise<Server> {
 
     app.use(cookie_parser());
@@ -142,7 +135,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     const upload = multer({ storage: multer.memoryStorage() });
 
-    // ... Auth routes (omitted for brevity)
+    // -------------------------------------------------------------------------
+    // 1. AUTHENTICATION ROUTES 
+    // -------------------------------------------------------------------------
+
     app.post("/api/signup", async (req: Request, res: Response) => {
         const { email, password } = req.body;
         if (!email || !password) return res.status(400).json({ message: "Email and password are required." });
@@ -163,7 +159,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const token = generateToken({ id: newUser.id, isAdmin: newUser.isAdmin });
             res.cookie('jwt', token, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax' });
 
-            const userResponse: Partial<User> = { id: newUser.id, email: newUser.email, isAdmin: newUser.isAdmin, credits: newUser.credits };
+            const userResponse: Partial<User> = { id: newUser.id, email: newUser.email, isAdmin: newUser.isAdmin, credits: newUser.credits, firstName: newUser.firstName };
             return res.status(201).json(userResponse); 
 
         } catch (error) {
@@ -187,7 +183,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const token = generateToken({ id: user.id, isAdmin: user.isAdmin });
             res.cookie('jwt', token, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax' });
 
-            const userResponse: Partial<User> = { id: user.id, email: user.email, isAdmin: user.isAdmin, credits: user.credits };
+            const userResponse: Partial<User> = { id: user.id, email: user.email, isAdmin: user.isAdmin, credits: user.credits, firstName: user.firstName };
             return res.status(200).json(userResponse); 
 
         } catch (error) {
@@ -207,7 +203,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const fullUser = await storage.getUser(req.user.id);
 
             if (fullUser) {
-                 const userResponse: Partial<User> = { id: fullUser.id, email: fullUser.email, isAdmin: fullUser.isAdmin, credits: fullUser.credits };
+                 const userResponse: Partial<User> = { id: fullUser.id, email: fullUser.email, isAdmin: fullUser.isAdmin, credits: fullUser.credits, firstName: fullUser.firstName };
                 return res.status(200).json({ isAuthenticated: true, user: userResponse });
             }
         }
@@ -216,19 +212,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
 
 
-    // ===================================
-    // 2. ENHANCEMENT ROUTES (MODIFIED UPLOAD)
-    // ===================================
+    // -------------------------------------------------------------------------
+    // 2. ENHANCEMENT ROUTES (CORE LOGIC)
+    // -------------------------------------------------------------------------
 
     /**
      * ROUTE 2.1: UPLOAD AND JOB QUEUEING
-     * Handles file upload, credit deduction, database record creation, and delegates the job.
      */
     app.post("/api/enhancements/upload", requireAuth, upload.single('image'), async (req: Request, res: Response) => {
         const userId = req.user!.id; 
 
         const enhancementType = req.body.enhancementType;
-        const scale = 2; 
+        const scale = 2; // Default scale
         const startTime = Date.now();
 
         if (!req.file || !enhancementType) {
@@ -248,14 +243,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
             // 1. Deduct Credits IMMEDIATELY
             await storage.updateUserCredits(userId, user.credits - ENHANCEMENT_COST);
 
-            // 🟢 2. CALCULATE ORIGINAL RESOLUTION using local function
+            // 2. CALCULATE ORIGINAL RESOLUTION
             const originalResolution = await readImageResolutionFromBuffer(req.file.buffer);
 
-            // 3. Prepare Data
+            // 3. Prepare Data URI
             const imageBase64 = req.file.buffer.toString('base64');
             const imageMime = req.file.mimetype;
-            
-            // 🛑 FIX: Store the FULL Base64 data URI in the database
             const originalImageUrl = `data:${imageMime};base64,${imageBase64}`; 
 
             // 4. CREATE DB RECORD in 'pending' status
@@ -266,17 +259,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 enhancementType: enhancementType, 
                 metadata: { enhancementType, scale },
                 creditsUsed: ENHANCEMENT_COST,
-                // 🟢 ADD ORIGINAL RESOLUTION TO DB RECORD
                 originalResolution: originalResolution, 
             });
             enhancementId = pendingEnhancement.id;
             
-            console.log(`[DB SUCCESS] Created enhancement ID: ${enhancementId}. Status: pending. Original Resolution: ${originalResolution}`);
+            console.log(`[DB SUCCESS] Created enhancement ID: ${enhancementId}. Status: pending. Resolution: ${originalResolution}`);
             
             // 5. Queue the AI Job (Do NOT await this)
             Promise.resolve(queueEnhancementJob(enhancementId, userId, imageBase64, enhancementType, scale, startTime));
 
-            // 6. Send 202 Accepted response immediately to the client
+            // 6. Send 202 Accepted response immediately
             return res.status(202).json({ 
                 message: "Enhancement job created.", 
                 enhancementId: enhancementId,
@@ -286,7 +278,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         } catch (error: any) {
             console.error('[CRITICAL UPLOAD ERROR]: Failed to create DB record or queue job:', error);
             
-            // Safety Refund: Crucial step if a database or queueing error occurs *after* credit deduction.
+            // Safety Refund
             if (user) {
                  const currentCredits = (await storage.getUser(userId))?.credits || 0;
                  if (currentCredits < user.credits) { 
@@ -301,7 +293,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
 
     /**
-     * ROUTE 2.2: HISTORY FETCH (Unchanged)
+     * ROUTE 2.2: HISTORY FETCH (Used by frontend for polling job status)
      */
     app.get("/api/enhancements", requireAuth, async (req: Request, res: Response) => {
         const userId = req.user!.id; 
@@ -312,6 +304,73 @@ export async function registerRoutes(app: Express): Promise<Server> {
         } catch (error) {
             console.error('Failed to fetch enhancements:', error);
             return res.status(500).json({ message: "Failed to fetch enhancement history." });
+        }
+    });
+    
+    
+    /**
+     * ROUTE 2.3: PYTHON WORKER COMPLETION WEBHOOK 
+     */
+    app.post("/api/enhancements/complete", async (req: Request, res: Response) => {
+        const { jobId, enhancedImageBase64, finalMetrics, processingTime } = req.body;
+        
+        if (!jobId || !enhancedImageBase64 || !finalMetrics || !processingTime) {
+            return res.status(400).json({ message: "Missing completion data from worker." });
+        }
+
+        try {
+            const enhancedImageUrl = `data:image/png;base64,${enhancedImageBase64}`;
+
+            const updateData: EnhancementUpdate = {
+                enhancedImageUrl: enhancedImageUrl,
+                status: "completed", 
+                processingTime: Math.round(processingTime),
+                psnr: finalMetrics.psnr,
+                ssim: finalMetrics.ssim,
+                mae: finalMetrics.mae,
+                enhancedResolution: finalMetrics.enhancedResolution,
+                processingProgress: 100,
+                modelUsed: finalMetrics.modelUsed,
+                // MODIFICATION: Automatically make completed jobs public
+                isPublic: true, 
+            } as unknown as EnhancementUpdate; 
+
+            await storage.updateEnhancement(jobId, updateData);
+
+            console.log(`[JOB COMPLETE] Enhancement ${jobId} finalized in DB. Model: ${finalMetrics.modelUsed}`);
+            
+            return res.status(200).send("Job finalized.");
+            
+        } catch (error) {
+            console.error(`[CRITICAL FINALIZE ERROR] Failed to finalize job ${jobId}:`, error);
+            return res.status(500).json({ message: "Failed to finalize job in database." });
+        }
+    });
+    
+    
+    /**
+     * ROUTE 2.4: GALLERY FETCH 
+     */
+    app.get("/api/gallery", async (req: Request, res: Response) => {
+        try {
+            const publicEnhancements = await storage.getPublicEnhancements(); 
+            
+            const galleryData = publicEnhancements.map(e => ({
+                id: e.id,
+                enhancementType: e.enhancementType,
+                originalImageUrl: e.originalImageUrl,
+                enhancedImageUrl: e.enhancedImageUrl,
+                modelUsed: e.modelUsed,
+                psnr: e.psnr,
+                ssim: e.ssim,
+                mae: e.mae,
+                enhancedResolution: e.enhancedResolution,
+            }));
+            
+            return res.status(200).json(galleryData);
+        } catch (error) {
+            console.error('Failed to fetch gallery items:', error);
+            return res.status(500).json({ message: "Failed to fetch gallery examples." });
         }
     });
 

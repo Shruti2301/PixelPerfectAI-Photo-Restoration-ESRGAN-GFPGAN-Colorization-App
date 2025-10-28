@@ -70,12 +70,10 @@ var enhancements = pgTable("enhancements", {
   // pending, processing, completed, failed
   enhancementType: text("enhancement_type").notNull(),
   modelUsed: text("model_used"),
-  // real-esrgan, gfpgan, etc.
   processingTime: integer("processing_time"),
   // in milliseconds
   errorMessage: text("error_message"),
   metadata: jsonb("metadata"),
-  // stores additional info like dimensions, settings
   isPublic: boolean("is_public").default(false).notNull(),
   creditsUsed: integer("credits_used").default(1).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -86,9 +84,7 @@ var enhancements = pgTable("enhancements", {
   ssim: numeric("ssim"),
   mae: numeric("mae"),
   enhancedResolution: varchar("enhanced_resolution"),
-  // e.g., "1024x1024"
   originalResolution: varchar("original_resolution")
-  // e.g., "512x512"
 });
 var analytics = pgTable("analytics", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -115,18 +111,12 @@ var upsertUserSchema = z.object({
 });
 var insertEnhancementSchema = createInsertSchema(enhancements).omit({
   id: true,
-  // Database generated
   createdAt: true,
-  // Database generated
-  // These fields are set *after* insertion by the worker:
   psnr: true,
   ssim: true,
   mae: true,
   enhancedResolution: true,
   processingProgress: true
-  // 🟢 FIX APPLIED: originalResolution is NOT omitted because it is
-  // known and inserted at the time of creation (in routes.ts).
-  // originalResolution: true, // <-- REMOVED THIS LINE
 });
 var updateEnhancementSchema = z.object({
   enhancedImageUrl: z.string().optional(),
@@ -137,7 +127,6 @@ var updateEnhancementSchema = z.object({
   isPublic: z.boolean().optional(),
   creditsUsed: z.number().optional(),
   metadata: z.any().optional(),
-  // --- NEW FIELDS ADDED ---
   psnr: z.coerce.number().optional(),
   ssim: z.coerce.number().optional(),
   mae: z.coerce.number().optional(),
@@ -220,7 +209,7 @@ var DatabaseStorage = class {
     return db.select().from(enhancements).where(eq(enhancements.userId, userId)).orderBy(desc(enhancements.createdAt));
   }
   async getPublicEnhancements() {
-    return db.select().from(enhancements).where(eq(enhancements.isPublic, true)).orderBy(desc(enhancements.createdAt)).limit(50);
+    return db.select().from(enhancements).where(eq(enhancements.isPublic, true)).orderBy(desc(enhancements.createdAt)).limit(5);
   }
   async getRecentEnhancements(limit) {
     return db.select().from(enhancements).orderBy(desc(enhancements.createdAt)).limit(limit);
@@ -281,6 +270,7 @@ function verifyToken(token) {
 
 // server/routes.ts
 import { ZodError } from "zod";
+var LOCAL_SERVER_URL = `http://127.0.0.1:${process.env.PORT || 5001}`;
 var PYTHON_WORKER_URL = "http://localhost:5000/api/enhancements/process_job";
 var ENHANCEMENT_COST = 1;
 async function readImageResolutionFromBuffer(buffer) {
@@ -322,16 +312,17 @@ async function queueEnhancementJob(enhancementId, userId, imageBase64, enhanceme
       status: "processing",
       processingProgress: 10
     });
-    console.log(`[JOB START] Enhancement ${enhancementId} is processing.`);
+    console.log(`[JOB DELEGATE] Enhancement ${enhancementId} is processing.`);
     const response = await axios.post(PYTHON_WORKER_URL, {
       jobId: enhancementId,
       enhancementType,
-      imageFileBase64: imageBase64
+      imageFileBase64: imageBase64,
+      callbackUrl: `${LOCAL_SERVER_URL}/api/enhancements/complete`
     });
     if (response.status !== 202) {
       throw new Error(`Python worker rejected job with status: ${response.status}`);
     }
-    console.log(`[JOB DELEGATED] Enhancement ${enhancementId} successfully sent to Python worker.`);
+    console.log(`[JOB SENT] Enhancement ${enhancementId} successfully delegated to Python worker.`);
   } catch (error) {
     const failureTime = Date.now() - startTime;
     console.error(`[JOB FAILED] Enhancement ${enhancementId} failed to delegate or start:`, error);
@@ -366,7 +357,7 @@ async function registerRoutes(app2) {
       });
       const token = generateToken({ id: newUser.id, isAdmin: newUser.isAdmin });
       res.cookie("jwt", token, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax" });
-      const userResponse = { id: newUser.id, email: newUser.email, isAdmin: newUser.isAdmin, credits: newUser.credits };
+      const userResponse = { id: newUser.id, email: newUser.email, isAdmin: newUser.isAdmin, credits: newUser.credits, firstName: newUser.firstName };
       return res.status(201).json(userResponse);
     } catch (error) {
       if (error instanceof ZodError) return res.status(400).json({ message: "Invalid data format." });
@@ -384,7 +375,7 @@ async function registerRoutes(app2) {
       }
       const token = generateToken({ id: user.id, isAdmin: user.isAdmin });
       res.cookie("jwt", token, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax" });
-      const userResponse = { id: user.id, email: user.email, isAdmin: user.isAdmin, credits: user.credits };
+      const userResponse = { id: user.id, email: user.email, isAdmin: user.isAdmin, credits: user.credits, firstName: user.firstName };
       return res.status(200).json(userResponse);
     } catch (error) {
       console.error(error);
@@ -400,7 +391,7 @@ async function registerRoutes(app2) {
     if (req.user && req.user.id) {
       const fullUser = await storage.getUser(req.user.id);
       if (fullUser) {
-        const userResponse = { id: fullUser.id, email: fullUser.email, isAdmin: fullUser.isAdmin, credits: fullUser.credits };
+        const userResponse = { id: fullUser.id, email: fullUser.email, isAdmin: fullUser.isAdmin, credits: fullUser.credits, firstName: fullUser.firstName };
         return res.status(200).json({ isAuthenticated: true, user: userResponse });
       }
     }
@@ -433,11 +424,10 @@ async function registerRoutes(app2) {
         enhancementType,
         metadata: { enhancementType, scale },
         creditsUsed: ENHANCEMENT_COST,
-        // 🟢 ADD ORIGINAL RESOLUTION TO DB RECORD
         originalResolution
       });
       enhancementId = pendingEnhancement.id;
-      console.log(`[DB SUCCESS] Created enhancement ID: ${enhancementId}. Status: pending. Original Resolution: ${originalResolution}`);
+      console.log(`[DB SUCCESS] Created enhancement ID: ${enhancementId}. Status: pending. Resolution: ${originalResolution}`);
       Promise.resolve(queueEnhancementJob(enhancementId, userId, imageBase64, enhancementType, scale, startTime));
       return res.status(202).json({
         message: "Enhancement job created.",
@@ -464,6 +454,54 @@ async function registerRoutes(app2) {
     } catch (error) {
       console.error("Failed to fetch enhancements:", error);
       return res.status(500).json({ message: "Failed to fetch enhancement history." });
+    }
+  });
+  app2.post("/api/enhancements/complete", async (req, res) => {
+    const { jobId, enhancedImageBase64, finalMetrics, processingTime } = req.body;
+    if (!jobId || !enhancedImageBase64 || !finalMetrics || !processingTime) {
+      return res.status(400).json({ message: "Missing completion data from worker." });
+    }
+    try {
+      const enhancedImageUrl = `data:image/png;base64,${enhancedImageBase64}`;
+      const updateData = {
+        enhancedImageUrl,
+        status: "completed",
+        processingTime: Math.round(processingTime),
+        psnr: finalMetrics.psnr,
+        ssim: finalMetrics.ssim,
+        mae: finalMetrics.mae,
+        enhancedResolution: finalMetrics.enhancedResolution,
+        processingProgress: 100,
+        modelUsed: finalMetrics.modelUsed,
+        // MODIFICATION: Automatically make completed jobs public
+        isPublic: true
+      };
+      await storage.updateEnhancement(jobId, updateData);
+      console.log(`[JOB COMPLETE] Enhancement ${jobId} finalized in DB. Model: ${finalMetrics.modelUsed}`);
+      return res.status(200).send("Job finalized.");
+    } catch (error) {
+      console.error(`[CRITICAL FINALIZE ERROR] Failed to finalize job ${jobId}:`, error);
+      return res.status(500).json({ message: "Failed to finalize job in database." });
+    }
+  });
+  app2.get("/api/gallery", async (req, res) => {
+    try {
+      const publicEnhancements = await storage.getPublicEnhancements();
+      const galleryData = publicEnhancements.map((e) => ({
+        id: e.id,
+        enhancementType: e.enhancementType,
+        originalImageUrl: e.originalImageUrl,
+        enhancedImageUrl: e.enhancedImageUrl,
+        modelUsed: e.modelUsed,
+        psnr: e.psnr,
+        ssim: e.ssim,
+        mae: e.mae,
+        enhancedResolution: e.enhancedResolution
+      }));
+      return res.status(200).json(galleryData);
+    } catch (error) {
+      console.error("Failed to fetch gallery items:", error);
+      return res.status(500).json({ message: "Failed to fetch gallery examples." });
     }
   });
   const httpServer = createServer(app2);

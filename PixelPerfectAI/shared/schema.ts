@@ -1,14 +1,5 @@
-/**
- * ---------------------------------------------------------------------------
- * Drizzle + Zod Schema Definitions
- * ---------------------------------------------------------------------------
- *
- * FIX APPLIED: Removed 'originalResolution' from the .omit() list in 
- * insertEnhancementSchema. This ensures that the original resolution, 
- * which is known at the time of file upload, is included in the initial 
- * database insertion request from routes.ts, resolving the TypeScript error.
- */
-
+// @shared/schema
+// Drizzle + Zod Schema Definitions
 
 import { sql } from "drizzle-orm";
 import { 
@@ -20,7 +11,7 @@ import {
   boolean,
   jsonb,
   index,
-  numeric // Import numeric for floating-point metrics
+  numeric 
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -28,7 +19,6 @@ import { relations } from "drizzle-orm";
 
 // --- Drizzle Schema ---
 
-// Session storage table (Unchanged)
 export const sessions = pgTable("sessions", {
   sid: varchar("sid").primaryKey(),
   sess: jsonb("sess").notNull(),
@@ -37,7 +27,6 @@ export const sessions = pgTable("sessions", {
   expireIdx: index("IDX_session_expire").on(table.expire),
 }));
 
-// Users table (Unchanged)
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().notNull(),
   email: text("email").unique(),
@@ -54,7 +43,6 @@ export const users = pgTable("users", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-// Image enhancements - stores all processed images
 export const enhancements = pgTable("enhancements", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
@@ -62,10 +50,10 @@ export const enhancements = pgTable("enhancements", {
   enhancedImageUrl: text("enhanced_image_url"),
   status: text("status").default("pending").notNull(), // pending, processing, completed, failed
   enhancementType: text("enhancement_type").notNull(), 
-  modelUsed: text("model_used"), // real-esrgan, gfpgan, etc.
+  modelUsed: text("model_used"), 
   processingTime: integer("processing_time"), // in milliseconds
   errorMessage: text("error_message"),
-  metadata: jsonb("metadata"), // stores additional info like dimensions, settings
+  metadata: jsonb("metadata"), 
   isPublic: boolean("is_public").default(false).notNull(), 
   creditsUsed: integer("credits_used").default(1).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -75,11 +63,10 @@ export const enhancements = pgTable("enhancements", {
   psnr: numeric("psnr"), 
   ssim: numeric("ssim"),
   mae: numeric("mae"),
-  enhancedResolution: varchar("enhanced_resolution"), // e.g., "1024x1024"
-  originalResolution: varchar("original_resolution"), // e.g., "512x512"
+  enhancedResolution: varchar("enhanced_resolution"), 
+  originalResolution: varchar("original_resolution"), 
 });
 
-// Analytics - track system-wide metrics (Unchanged)
 export const analytics = pgTable("analytics", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   eventType: text("event_type").notNull(), 
@@ -89,7 +76,6 @@ export const analytics = pgTable("analytics", {
 });
 
 // --- Relations (Unchanged) ---
-
 export const usersRelations = relations(users, ({ many }) => ({
   enhancements: many(enhancements),
 }));
@@ -102,7 +88,6 @@ export const enhancementsRelations = relations(enhancements, ({ one }) => ({
 }));
 
 // --- Zod Schemas for Validation ---
-
 export const upsertUserSchema = z.object({
   id: z.string().optional(),
   email: z.string().email().nullable().optional(),
@@ -112,21 +97,15 @@ export const upsertUserSchema = z.object({
 });
 
 export const insertEnhancementSchema = createInsertSchema(enhancements).omit({
-  id: true, // Database generated
-  createdAt: true, // Database generated
-  // These fields are set *after* insertion by the worker:
+  id: true, 
+  createdAt: true, 
   psnr: true, 
   ssim: true,
   mae: true,
   enhancedResolution: true,
   processingProgress: true, 
-  
-  // 🟢 FIX APPLIED: originalResolution is NOT omitted because it is
-  // known and inserted at the time of creation (in routes.ts).
-  // originalResolution: true, // <-- REMOVED THIS LINE
 });
 
-// FIX: Updated Zod schema to include all new updateable fields
 export const updateEnhancementSchema = z.object({
   enhancedImageUrl: z.string().optional(),
   status: z.enum(["pending", "processing", "completed", "failed"]).optional(),
@@ -136,8 +115,6 @@ export const updateEnhancementSchema = z.object({
   isPublic: z.boolean().optional(),
   creditsUsed: z.number().optional(),
   metadata: z.any().optional(), 
-  
-  // --- NEW FIELDS ADDED ---
   psnr: z.coerce.number().optional(),
   ssim: z.coerce.number().optional(),
   mae: z.coerce.number().optional(),
@@ -152,7 +129,6 @@ export const insertAnalyticsSchema = createInsertSchema(analytics).omit({
 });
 
 // --- TypeScript Types ---
-
 export type User = typeof users.$inferSelect;
 export type HashedUser = User & { hashedPassword: string }; 
 export type UpsertUser = z.infer<typeof upsertUserSchema>;

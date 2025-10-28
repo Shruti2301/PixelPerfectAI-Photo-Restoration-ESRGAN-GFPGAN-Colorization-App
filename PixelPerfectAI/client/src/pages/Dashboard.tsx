@@ -7,6 +7,7 @@
  * - Display of AI metrics (PSNR, SSIM, MAE, Resolution) upon completion.
  * - FIX APPLIED: Safe conversion from Drizzle 'numeric' string to Number() for toFixed() calls.
  * - NEW FEATURE: Side-by-side comparison modal with metrics.
+ * - FIX APPLIED: Comparison modal now only shows Resolution for the Original Image.
  */
 
 import { useState, useEffect, useCallback } from "react";
@@ -28,7 +29,7 @@ import {
   Image as ImageIcon,
   Coins,
   Zap,
-  SplitSquareHorizontal, // Added for Compare button
+  SplitSquareHorizontal,
 } from "lucide-react";
 import {
   Select,
@@ -39,7 +40,7 @@ import {
 } from "@/components/ui/select";
 // Added for the comparison modal
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"; 
-import { Progress } from "@/components/ui/progress"; // Assuming this exists
+import { Progress } from "@/components/ui/progress";
 
 
 // Helper component for displaying metrics
@@ -52,7 +53,7 @@ const MetricLabel: React.FC<{ value: string; label: string }> = ({ value, label 
 
 // FIX: Helper function to safely convert Drizzle's numeric (string) to a formatted number.
 const formatMetric = (value: string | number | null | undefined, precision: number): string => {
-    if (value === null || value === undefined || value === 'null') { // Added 'null' string check
+    if (value === null || value === undefined || value === 'null') {
         return 'N/A';
     }
     const numValue = Number(value);
@@ -584,7 +585,7 @@ export default function Dashboard() {
       </main>
 
       {/* -------------------------------------------------- */}
-      {/* 🟢 SIDE-BY-SIDE COMPARISON DIALOG */}
+      {/* 🟢 SIDE-BY-SIDE COMPARISON DIALOG (MODIFIED) */}
       {/* -------------------------------------------------- */}
       <Dialog open={!!selectedEnhancement} onOpenChange={() => setSelectedEnhancement(null)}>
         <DialogContent className="max-w-5xl max-h-[95vh] overflow-y-auto">
@@ -614,11 +615,10 @@ export default function Dashboard() {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm pt-2 p-4 border rounded-lg">
+                {/* 🎯 FIX APPLIED: Only Resolution is displayed in a single-column grid */}
+                <div className="grid grid-cols-1 gap-x-4 gap-y-2 text-sm pt-2 p-4 border rounded-lg">
                     <MetricLabel value={selectedEnhancement.originalResolution || 'N/A'} label="Resolution" />
-                    <MetricLabel value="N/A" label="PSNR (Reference)" />
-                    <MetricLabel value="N/A" label="SSIM (Reference)" />
-                    <MetricLabel value="N/A" label="MAE (Reference)" />
+                    {/* Removed PSNR, SSIM, MAE metrics */}
                 </div>
               </div>
 
@@ -634,6 +634,7 @@ export default function Dashboard() {
                   />
                 </div>
 
+                {/* Enhanced Metrics (Full Set) */}
                 <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm pt-2 p-4 border border-primary/50 bg-primary/5 rounded-lg">
                     <MetricLabel value={selectedEnhancement.enhancedResolution || 'N/A'} label="Resolution" />
                     <MetricLabel value={formatMetric(selectedEnhancement.psnr, 2)} label="PSNR (dB)" />
